@@ -62,7 +62,7 @@ void spawn_powerup(int x, int y) {
             powerups[i].rect.y = y;
             powerups[i].rect.w = POWERUP_SIZE;
             powerups[i].rect.h = POWERUP_SIZE;
-            powerups[i].type = (rand() % 2 == 0) ? POWERUP_ADD_LIFE : POWERUP_REMOVE_LIFE;
+            powerups[i].type = (rand() < RAND_MAX / 2) ? POWERUP_ADD_LIFE : POWERUP_REMOVE_LIFE;
             break;
         }
     }
