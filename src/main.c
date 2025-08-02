@@ -29,8 +29,18 @@ bool ball_launched = false;
 bool left_pressed = false;
 bool right_pressed = false;
 bool debug_mode = false;
+int lives;
+
+void reset_ball() {
+    ball_launched = false;
+    ball_vel_x = 0;
+    ball_vel_y = 0;
+    ball.x = paddle.x + (PADDLE_WIDTH / 2) - (BALL_SIZE / 2);
+    ball.y = paddle.y - BALL_SIZE;
+}
 
 void reset_game() {
+    lives = 3;
     paddle.x = (SCREEN_WIDTH - PADDLE_WIDTH) / 2;
     paddle.y = SCREEN_HEIGHT - PADDLE_HEIGHT - 10;
     paddle.w = PADDLE_WIDTH;
@@ -48,11 +58,7 @@ void reset_game() {
         }
     }
 
-    ball_launched = false;
-    ball_vel_x = 0;
-    ball_vel_y = 0;
-    ball.x = paddle.x + (PADDLE_WIDTH / 2) - (BALL_SIZE / 2);
-    ball.y = paddle.y - BALL_SIZE;
+    reset_ball();
 }
 
 int main(int argc, char* argv[]) {
@@ -177,7 +183,12 @@ int main(int argc, char* argv[]) {
                 }
             }
             if (ball.y > SCREEN_HEIGHT) {
-                reset_game();
+                lives--;
+                if (lives > 0) {
+                    reset_ball();
+                } else {
+                    reset_game();
+                }
             }
 
             // Brick collision
@@ -211,8 +222,7 @@ int main(int argc, char* argv[]) {
                 reset_game();
             }
         } else {
-            ball.x = paddle.x + (PADDLE_WIDTH / 2) - (BALL_SIZE / 2);
-            ball.y = paddle.y - BALL_SIZE;
+            reset_ball();
         }
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -228,6 +238,16 @@ int main(int argc, char* argv[]) {
                     SDL_RenderFillRect(renderer, &bricks[i][j]);
                 }
             }
+        }
+
+        for (int i = 0; i < lives; i++) {
+            SDL_Rect life_ball = {
+                SCREEN_WIDTH - 20,
+                SCREEN_HEIGHT - 20 - (i * (BALL_SIZE + 5)),
+                BALL_SIZE,
+                BALL_SIZE
+            };
+            SDL_RenderFillRect(renderer, &life_ball);
         }
 
         if (debug_mode) {
