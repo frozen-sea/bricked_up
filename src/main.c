@@ -17,9 +17,15 @@
 #define POWERUP_SIZE 15
 #define MAX_POWERUPS 10
 
+typedef enum {
+    POWERUP_ADD_LIFE,
+    POWERUP_REMOVE_LIFE
+} PowerUpType;
+
 typedef struct {
     SDL_Rect rect;
     bool active;
+    PowerUpType type;
 } PowerUp;
 
 PowerUp powerups[MAX_POWERUPS];
@@ -56,6 +62,7 @@ void spawn_powerup(int x, int y) {
             powerups[i].rect.y = y;
             powerups[i].rect.w = POWERUP_SIZE;
             powerups[i].rect.h = POWERUP_SIZE;
+            powerups[i].type = (rand() % 2 == 0) ? POWERUP_ADD_LIFE : POWERUP_REMOVE_LIFE;
             break;
         }
     }
@@ -272,7 +279,13 @@ int main(int argc, char* argv[]) {
                 powerups[i].rect.y += 2;
                 if (SDL_HasIntersection(&powerups[i].rect, &paddle)) {
                     powerups[i].active = false;
-                    lives++;
+                    if (powerups[i].type == POWERUP_ADD_LIFE) {
+                        lives++;
+                    } else if (powerups[i].type == POWERUP_REMOVE_LIFE) {
+                        if (lives > 0) {
+                            lives--;
+                        }
+                    }
                 } else if (powerups[i].rect.y > SCREEN_HEIGHT) {
                     powerups[i].active = false;
                 }
@@ -312,10 +325,15 @@ int main(int argc, char* argv[]) {
 
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
                 int line_thickness = POWERUP_SIZE / 5;
-                SDL_Rect h_line = {powerups[i].rect.x, powerups[i].rect.y + (POWERUP_SIZE / 2) - (line_thickness / 2), POWERUP_SIZE, line_thickness};
-                SDL_Rect v_line = {powerups[i].rect.x + (POWERUP_SIZE / 2) - (line_thickness / 2), powerups[i].rect.y, line_thickness, POWERUP_SIZE};
-                SDL_RenderFillRect(renderer, &h_line);
-                SDL_RenderFillRect(renderer, &v_line);
+                if (powerups[i].type == POWERUP_ADD_LIFE) {
+                    SDL_Rect h_line = {powerups[i].rect.x, powerups[i].rect.y + (POWERUP_SIZE / 2) - (line_thickness / 2), POWERUP_SIZE, line_thickness};
+                    SDL_Rect v_line = {powerups[i].rect.x + (POWERUP_SIZE / 2) - (line_thickness / 2), powerups[i].rect.y, line_thickness, POWERUP_SIZE};
+                    SDL_RenderFillRect(renderer, &h_line);
+                    SDL_RenderFillRect(renderer, &v_line);
+                } else if (powerups[i].type == POWERUP_REMOVE_LIFE) {
+                    SDL_Rect h_line = {powerups[i].rect.x, powerups[i].rect.y + (POWERUP_SIZE / 2) - (line_thickness / 2), POWERUP_SIZE, line_thickness};
+                    SDL_RenderFillRect(renderer, &h_line);
+                }
             }
         }
 
