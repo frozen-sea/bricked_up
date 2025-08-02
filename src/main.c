@@ -2,6 +2,7 @@
 #include <SDL2/SDL_ttf.h>
 #include <stdbool.h>
 #include <math.h>
+#include <time.h>
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
@@ -13,6 +14,15 @@
 #define BRICK_ROWS 5
 #define BRICK_COLS 10
 #define RIGHT_MARGIN 30
+#define POWERUP_SIZE 15
+#define MAX_POWERUPS 10
+
+typedef struct {
+    SDL_Rect rect;
+    bool active;
+} PowerUp;
+
+PowerUp powerups[MAX_POWERUPS];
 
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
@@ -31,6 +41,25 @@ bool left_pressed = false;
 bool right_pressed = false;
 bool debug_mode = false;
 int lives;
+
+void initialize_powerups() {
+    for (int i = 0; i < MAX_POWERUPS; i++) {
+        powerups[i].active = false;
+    }
+}
+
+void spawn_powerup(int x, int y) {
+    for (int i = 0; i < MAX_POWERUPS; i++) {
+        if (!powerups[i].active) {
+            powerups[i].active = true;
+            powerups[i].rect.x = x;
+            powerups[i].rect.y = y;
+            powerups[i].rect.w = POWERUP_SIZE;
+            powerups[i].rect.h = POWERUP_SIZE;
+            break;
+        }
+    }
+}
 
 void reset_ball() {
     ball_launched = false;
@@ -60,6 +89,7 @@ void reset_game() {
     }
 
     reset_ball();
+    initialize_powerups();
 }
 
 int main(int argc, char* argv[]) {
@@ -74,6 +104,7 @@ int main(int argc, char* argv[]) {
     }
 
     reset_game();
+    srand(time(NULL));
 
     bool quit = false;
     SDL_Event e;
@@ -204,6 +235,10 @@ int main(int argc, char* argv[]) {
                     if (bricks[i][j].w != 0 && SDL_HasIntersection(&ball, &bricks[i][j])) {
                         bricks[i][j].w = 0;
 
+                        if (rand() % 100 < 10) {
+                            spawn_powerup(bricks[i][j].x + (BRICK_WIDTH / 2) - (POWERUP_SIZE / 2), bricks[i][j].y + (BRICK_HEIGHT / 2) - (POWERUP_SIZE / 2));
+                        }
+
                         float ball_center_x = ball.x + BALL_SIZE / 2.0f;
                         float ball_center_y = ball.y + BALL_SIZE / 2.0f;
                         float brick_center_x = bricks[i][j].x + BRICK_WIDTH / 2.0f;
@@ -231,6 +266,19 @@ int main(int argc, char* argv[]) {
             reset_ball();
         }
 
+        // Update powerups
+        for (int i = 0; i < MAX_POWERUPS; i++) {
+            if (powerups[i].active) {
+                powerups[i].rect.y += 2;
+                if (SDL_HasIntersection(&powerups[i].rect, &paddle)) {
+                    powerups[i].active = false;
+                    lives++;
+                } else if (powerups[i].rect.y > SCREEN_HEIGHT) {
+                    powerups[i].active = false;
+                }
+            }
+        }
+
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
@@ -254,6 +302,21 @@ int main(int argc, char* argv[]) {
                 BALL_SIZE
             };
             SDL_RenderFillRect(renderer, &life_ball);
+        }
+
+        // Draw powerups
+        for (int i = 0; i < MAX_POWERUPS; i++) {
+            if (powerups[i].active) {
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                SDL_RenderFillRect(renderer, &powerups[i].rect);
+
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                int line_thickness = POWERUP_SIZE / 5;
+                SDL_Rect h_line = {powerups[i].rect.x, powerups[i].rect.y + (POWERUP_SIZE / 2) - (line_thickness / 2), POWERUP_SIZE, line_thickness};
+                SDL_Rect v_line = {powerups[i].rect.x + (POWERUP_SIZE / 2) - (line_thickness / 2), powerups[i].rect.y, line_thickness, POWERUP_SIZE};
+                SDL_RenderFillRect(renderer, &h_line);
+                SDL_RenderFillRect(renderer, &v_line);
+            }
         }
 
         if (debug_mode) {
