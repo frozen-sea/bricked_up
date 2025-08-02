@@ -28,6 +28,7 @@ bool ball_launched = false;
 
 bool left_pressed = false;
 bool right_pressed = false;
+bool debug_mode = false;
 
 void reset_game() {
     paddle.x = (SCREEN_WIDTH - PADDLE_WIDTH) / 2;
@@ -89,6 +90,9 @@ int main(int argc, char* argv[]) {
                             ball_vel_x = 0;
                             ball_vel_y = -5;
                         }
+                        break;
+                    case SDLK_d:
+                        debug_mode = !debug_mode;
                         break;
                 }
             }
@@ -226,46 +230,48 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        char debug_text_x[50], debug_text_y[50], debug_text_vx[50], debug_text_vy[50];
-        sprintf(debug_text_x, "x: %.2f", (float)ball.x);
-        sprintf(debug_text_y, "y: %.2f", (float)ball.y);
-        sprintf(debug_text_vx, "vx: %.2f", ball_vel_x);
-        sprintf(debug_text_vy, "vy: %.2f", ball_vel_y);
+        if (debug_mode) {
+            char debug_text_x[50], debug_text_y[50], debug_text_vx[50], debug_text_vy[50];
+            sprintf(debug_text_x, "x: %.2f", (float)ball.x);
+            sprintf(debug_text_y, "y: %.2f", (float)ball.y);
+            sprintf(debug_text_vx, "vx: %.2f", ball_vel_x);
+            sprintf(debug_text_vy, "vy: %.2f", ball_vel_y);
 
-        SDL_Color text_color = {255, 255, 255, 255};
-        int y_offset = 10;
+            SDL_Color text_color = {255, 255, 255, 255};
+            int y_offset = 10;
 
-        SDL_Surface* text_surface_x = TTF_RenderText_Solid(font, debug_text_x, text_color);
-        SDL_Texture* text_texture_x = SDL_CreateTextureFromSurface(renderer, text_surface_x);
-        SDL_Rect text_rect_x = {10, SCREEN_HEIGHT - text_surface_x->h - y_offset, text_surface_x->w, text_surface_x->h};
-        SDL_RenderCopy(renderer, text_texture_x, NULL, &text_rect_x);
-        y_offset += text_surface_x->h;
+            SDL_Surface* text_surface_x = TTF_RenderText_Solid(font, debug_text_x, text_color);
+            SDL_Texture* text_texture_x = SDL_CreateTextureFromSurface(renderer, text_surface_x);
+            SDL_Rect text_rect_x = {10, SCREEN_HEIGHT - text_surface_x->h - y_offset, text_surface_x->w, text_surface_x->h};
+            SDL_RenderCopy(renderer, text_texture_x, NULL, &text_rect_x);
+            y_offset += text_surface_x->h;
 
-        SDL_Surface* text_surface_y = TTF_RenderText_Solid(font, debug_text_y, text_color);
-        SDL_Texture* text_texture_y = SDL_CreateTextureFromSurface(renderer, text_surface_y);
-        SDL_Rect text_rect_y = {10, SCREEN_HEIGHT - text_surface_y->h - y_offset, text_surface_y->w, text_surface_y->h};
-        SDL_RenderCopy(renderer, text_texture_y, NULL, &text_rect_y);
-        y_offset += text_surface_y->h;
+            SDL_Surface* text_surface_y = TTF_RenderText_Solid(font, debug_text_y, text_color);
+            SDL_Texture* text_texture_y = SDL_CreateTextureFromSurface(renderer, text_surface_y);
+            SDL_Rect text_rect_y = {10, SCREEN_HEIGHT - text_surface_y->h - y_offset, text_surface_y->w, text_surface_y->h};
+            SDL_RenderCopy(renderer, text_texture_y, NULL, &text_rect_y);
+            y_offset += text_surface_y->h;
 
-        SDL_Surface* text_surface_vx = TTF_RenderText_Solid(font, debug_text_vx, text_color);
-        SDL_Texture* text_texture_vx = SDL_CreateTextureFromSurface(renderer, text_surface_vx);
-        SDL_Rect text_rect_vx = {10, SCREEN_HEIGHT - text_surface_vx->h - y_offset, text_surface_vx->w, text_surface_vx->h};
-        SDL_RenderCopy(renderer, text_texture_vx, NULL, &text_rect_vx);
-        y_offset += text_surface_vx->h;
+            SDL_Surface* text_surface_vx = TTF_RenderText_Solid(font, debug_text_vx, text_color);
+            SDL_Texture* text_texture_vx = SDL_CreateTextureFromSurface(renderer, text_surface_vx);
+            SDL_Rect text_rect_vx = {10, SCREEN_HEIGHT - text_surface_vx->h - y_offset, text_surface_vx->w, text_surface_vx->h};
+            SDL_RenderCopy(renderer, text_texture_vx, NULL, &text_rect_vx);
+            y_offset += text_surface_vx->h;
 
-        SDL_Surface* text_surface_vy = TTF_RenderText_Solid(font, debug_text_vy, text_color);
-        SDL_Texture* text_texture_vy = SDL_CreateTextureFromSurface(renderer, text_surface_vy);
-        SDL_Rect text_rect_vy = {10, SCREEN_HEIGHT - text_surface_vy->h - y_offset, text_surface_vy->w, text_surface_vy->h};
-        SDL_RenderCopy(renderer, text_texture_vy, NULL, &text_rect_vy);
+            SDL_Surface* text_surface_vy = TTF_RenderText_Solid(font, debug_text_vy, text_color);
+            SDL_Texture* text_texture_vy = SDL_CreateTextureFromSurface(renderer, text_surface_vy);
+            SDL_Rect text_rect_vy = {10, SCREEN_HEIGHT - text_surface_vy->h - y_offset, text_surface_vy->w, text_surface_vy->h};
+            SDL_RenderCopy(renderer, text_texture_vy, NULL, &text_rect_vy);
 
-        SDL_FreeSurface(text_surface_x);
-        SDL_DestroyTexture(text_texture_x);
-        SDL_FreeSurface(text_surface_y);
-        SDL_DestroyTexture(text_texture_y);
-        SDL_FreeSurface(text_surface_vx);
-        SDL_DestroyTexture(text_texture_vx);
-        SDL_FreeSurface(text_surface_vy);
-        SDL_DestroyTexture(text_texture_vy);
+            SDL_FreeSurface(text_surface_x);
+            SDL_DestroyTexture(text_texture_x);
+            SDL_FreeSurface(text_surface_y);
+            SDL_DestroyTexture(text_texture_y);
+            SDL_FreeSurface(text_surface_vx);
+            SDL_DestroyTexture(text_texture_vx);
+            SDL_FreeSurface(text_surface_vy);
+            SDL_DestroyTexture(text_texture_vy);
+        }
 
         SDL_RenderPresent(renderer);
         SDL_Delay(16);
