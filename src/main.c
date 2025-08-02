@@ -149,23 +149,28 @@ int main(int argc, char* argv[]) {
                 float angle = atan2(ball_vel_y, ball_vel_x);
 
                 // Adjust angle based on hit location
-                float paddle_third = PADDLE_WIDTH / 3.0f;
+                float paddle_fifth = PADDLE_WIDTH / 5.0f;
                 float ball_center_x = ball.x + BALL_SIZE / 2.0f;
 
-                if (ball_center_x < paddle.x + paddle_third) { // Left third
+                if (ball_center_x < paddle.x + paddle_fifth) { // Far left
+                    angle -= 20.0f * M_PI / 180.0f; // 20 degrees left
+                } else if (ball_center_x < paddle.x + 2 * paddle_fifth) { // Near left
                     angle -= 10.0f * M_PI / 180.0f; // 10 degrees left
-                } else if (ball_center_x > paddle.x + 2 * paddle_third) { // Right third
+                } else if (ball_center_x < paddle.x + 3 * paddle_fifth) { // Middle
+                    // No angle change
+                } else if (ball_center_x < paddle.x + 4 * paddle_fifth) { // Near right
                     angle += 10.0f * M_PI / 180.0f; // 10 degrees right
+                } else { // Far right
+                    angle += 20.0f * M_PI / 180.0f; // 20 degrees right
                 }
-                // Middle third has no change to the angle.
 
                 // Clamp angle to ensure the ball always goes up
-                float ten_degrees_rad = 10.0f * M_PI / 180.0f;
-                if (angle > -ten_degrees_rad) {
-                    angle = -ten_degrees_rad;
+                float twenty_degrees_rad = 20.0f * M_PI / 180.0f;
+                if (angle > -twenty_degrees_rad) {
+                    angle = -twenty_degrees_rad;
                 }
-                if (angle < -M_PI + ten_degrees_rad) {
-                    angle = -M_PI + ten_degrees_rad;
+                if (angle < -M_PI + twenty_degrees_rad) {
+                    angle = -M_PI + twenty_degrees_rad;
                 }
 
                 // Recalculate velocities to maintain constant speed
