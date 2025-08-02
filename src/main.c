@@ -12,6 +12,7 @@
 #define BRICK_HEIGHT 20
 #define BRICK_ROWS 5
 #define BRICK_COLS 10
+#define RIGHT_MARGIN 30
 
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
@@ -117,8 +118,8 @@ int main(int argc, char* argv[]) {
         if (paddle.x < 0) {
             paddle.x = 0;
         }
-        if (paddle.x > SCREEN_WIDTH - PADDLE_WIDTH) {
-            paddle.x = SCREEN_WIDTH - PADDLE_WIDTH;
+        if (paddle.x > SCREEN_WIDTH - PADDLE_WIDTH - RIGHT_MARGIN) {
+            paddle.x = SCREEN_WIDTH - PADDLE_WIDTH - RIGHT_MARGIN;
         }
 
         if (left_pressed) {
@@ -173,7 +174,7 @@ int main(int argc, char* argv[]) {
             }
 
             // Wall collision
-            if (ball.x < 0 || ball.x > SCREEN_WIDTH - BALL_SIZE) {
+            if (ball.x < 0 || ball.x > SCREEN_WIDTH - BALL_SIZE - RIGHT_MARGIN) {
                 ball_vel_x = -ball_vel_x;
             }
             if (ball.y < 0) {
