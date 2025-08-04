@@ -1,6 +1,6 @@
 CC=gcc
-CFLAGS=-I/usr/include/SDL2 -D_REENTRANT
-LDFLAGS=-lSDL2 -lSDL2_ttf -lm
+CFLAGS+=$(shell pkg-config --cflags sdl3 sdl3-ttf)
+LDFLAGS+=$(shell pkg-config --libs sdl3 sdl3-ttf) -lm
 TARGET=bricked_up
 SOURCES=$(wildcard src/*.c)
 OBJECTS=$(SOURCES:.c=.o)
