@@ -1,5 +1,6 @@
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
+#include <SDL3_image/SDL_image.h>
 #include <stdbool.h>
 #include <math.h>
 #include <time.h>
@@ -12,9 +13,9 @@
 #define PADDLE_WIDTH_STEP 20
 #define PADDLE_HEIGHT 15
 #define BALL_SIZE 15
-#define BRICK_WIDTH 60
-#define BRICK_HEIGHT 20
-#define BRICK_ROWS 5
+#define BRICK_WIDTH 64
+#define BRICK_HEIGHT 32
+#define BRICK_ROWS 6
 #define BRICK_COLS 10
 #define RIGHT_MARGIN 30
 #define POWERUP_SIZE 15
@@ -51,6 +52,7 @@ Ball balls[MAX_BALLS];
 SDL_Window* window = NULL;
 SDL_Renderer* renderer = NULL;
 TTF_Font* font = NULL;
+SDL_Texture* spritesheet = NULL;
 
 SDL_FRect paddle;
 SDL_FRect bricks[BRICK_ROWS][BRICK_COLS];
@@ -163,8 +165,8 @@ void reset_game() {
         for (int j = 0; j < BRICK_COLS; j++) {
             bricks[i][j].w = BRICK_WIDTH;
             bricks[i][j].h = BRICK_HEIGHT;
-            bricks[i][j].x = j * (BRICK_WIDTH + 10) + 35;
-            bricks[i][j].y = i * (BRICK_HEIGHT + 10) + 35;
+            bricks[i][j].x = j * (BRICK_WIDTH + 5) + 42;
+            bricks[i][j].y = i * (BRICK_HEIGHT + 5) + 35;
         }
     }
 
@@ -181,6 +183,14 @@ int main(int argc, char* argv[]) {
         printf("Failed to load font: %s\n", SDL_GetError());
         return 1;
     }
+
+    spritesheet = IMG_LoadTexture(renderer, "assets/spritesheet-breakout.png");
+    if (spritesheet == NULL) {
+        printf("Failed to load spritesheet: %s\n", SDL_GetError());
+        return 1;
+    }
+    SDL_SetTextureScaleMode(spritesheet, SDL_SCALEMODE_NEAREST);
+
 
     reset_game();
     srand(time(NULL));
@@ -461,7 +471,8 @@ int main(int argc, char* argv[]) {
         for (int i = 0; i < BRICK_ROWS; i++) {
             for (int j = 0; j < BRICK_COLS; j++) {
                 if (bricks[i][j].w != 0) {
-                    draw_rounded_rect(renderer, &bricks[i][j], 3);
+                    SDL_FRect src_rect = { 32, 176 + i * 16, 32, 16 };
+                    SDL_RenderTexture(renderer, spritesheet, &src_rect, &bricks[i][j]);
                 }
             }
         }
@@ -514,6 +525,7 @@ int main(int argc, char* argv[]) {
         SDL_Delay(16);
     }
 
+    SDL_DestroyTexture(spritesheet);
     TTF_CloseFont(font);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
