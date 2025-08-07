@@ -41,7 +41,6 @@ typedef enum {
 
 typedef struct {
     SDL_FRect rect;
-    SDL_FRect src_rect;
     bool active;
     PowerUpType type;
 } PowerUp;
@@ -117,23 +116,17 @@ void spawn_powerup(GameState* gs, float x, float y) {
 
     int rand_val = rand() % 100;
     PowerUpType type;
-    SDL_FRect src_rect;
 
     if (rand_val < 5) { // 5%
         type = POWERUP_BALL_SPLIT;
-        src_rect = (SDL_FRect){640, 192, 32, 32};
     } else if (rand_val < 15) { // 10%
         type = POWERUP_ADD_LIFE;
-        src_rect = (SDL_FRect){512, 192, 32, 32};
     } else if (rand_val < 30) { // 15%
         type = POWERUP_PADDLE_WIDER;
-        src_rect = (SDL_FRect){576, 192, 32, 32};
     } else if (rand_val < 50) { // 20%
         type = POWERUP_REMOVE_LIFE;
-        src_rect = (SDL_FRect){544, 192, 32, 32};
     } else if (rand_val < 75) { // 25%
         type = POWERUP_PADDLE_NARROWER;
-        src_rect = (SDL_FRect){608, 192, 32, 32};
     } else {
         return; // 25% chance of no powerup
     }
@@ -146,7 +139,6 @@ void spawn_powerup(GameState* gs, float x, float y) {
             gs->powerups[i].rect.w = POWERUP_SIZE;
             gs->powerups[i].rect.h = POWERUP_SIZE;
             gs->powerups[i].type = type;
-            gs->powerups[i].src_rect = src_rect;
             gs->last_powerup_spawn_time = current_time;
             break;
         }
@@ -516,7 +508,34 @@ void render_gameplay(GameState* gs) {
     // Draw powerups
     for (int i = 0; i < MAX_POWERUPS; i++) {
         if (gs->powerups[i].active) {
-            SDL_RenderTexture(gs->renderer, gs->spritesheet, &gs->powerups[i].src_rect, &gs->powerups[i].rect);
+            SDL_SetRenderDrawColor(gs->renderer, 255, 255, 255, 255);
+            draw_rounded_rect(gs->renderer, &gs->powerups[i].rect, 3);
+
+            SDL_SetRenderDrawColor(gs->renderer, 0, 0, 0, 255);
+            float line_thickness = POWERUP_SIZE / 5.0f;
+            if (gs->powerups[i].type == POWERUP_ADD_LIFE) {
+                SDL_FRect h_line = {gs->powerups[i].rect.x, gs->powerups[i].rect.y + (POWERUP_SIZE / 2.0f) - (line_thickness / 2.0f), POWERUP_SIZE, line_thickness};
+                SDL_FRect v_line = {gs->powerups[i].rect.x + (POWERUP_SIZE / 2.0f) - (line_thickness / 2.0f), gs->powerups[i].rect.y, line_thickness, POWERUP_SIZE};
+                SDL_RenderFillRect(gs->renderer, &h_line);
+                SDL_RenderFillRect(gs->renderer, &v_line);
+            } else if (gs->powerups[i].type == POWERUP_REMOVE_LIFE) {
+                SDL_FRect h_line = {gs->powerups[i].rect.x, gs->powerups[i].rect.y + (POWERUP_SIZE / 2.0f) - (line_thickness / 2.0f), POWERUP_SIZE, line_thickness};
+                SDL_RenderFillRect(gs->renderer, &h_line);
+            } else if (gs->powerups[i].type == POWERUP_PADDLE_WIDER) {
+                SDL_RenderLine(gs->renderer, gs->powerups[i].rect.x, gs->powerups[i].rect.y, gs->powerups[i].rect.x + gs->powerups[i].rect.w, gs->powerups[i].rect.y + gs->powerups[i].rect.h / 2);
+                SDL_RenderLine(gs->renderer, gs->powerups[i].rect.x + gs->powerups[i].rect.w, gs->powerups[i].rect.y + gs->powerups[i].rect.h / 2, gs->powerups[i].rect.x, gs->powerups[i].rect.y + gs->powerups[i].rect.h);
+            } else if (gs->powerups[i].type == POWERUP_PADDLE_NARROWER) {
+                SDL_RenderLine(gs->renderer, gs->powerups[i].rect.x + gs->powerups[i].rect.w, gs->powerups[i].rect.y, gs->powerups[i].rect.x, gs->powerups[i].rect.y + gs->powerups[i].rect.h / 2);
+                SDL_RenderLine(gs->renderer, gs->powerups[i].rect.x, gs->powerups[i].rect.y + gs->powerups[i].rect.h / 2, gs->powerups[i].rect.x + gs->powerups[i].rect.w, gs->powerups[i].rect.y + gs->powerups[i].rect.h);
+            } else if (gs->powerups[i].type == POWERUP_BALL_SPLIT) {
+                float cx = gs->powerups[i].rect.x + POWERUP_SIZE / 2;
+                float cy = gs->powerups[i].rect.y + POWERUP_SIZE / 2;
+                float r = POWERUP_SIZE / 2;
+                SDL_RenderLine(gs->renderer, cx, cy - r, cx, cy + r);
+                SDL_RenderLine(gs->renderer, cx - r, cy, cx + r, cy);
+                SDL_RenderLine(gs->renderer, cx - r, cy - r, cx + r, cy + r);
+                SDL_RenderLine(gs->renderer, cx - r, cy + r, cx + r, cy - r);
+            }
         }
     }
 
