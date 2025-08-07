@@ -12,7 +12,7 @@
 #define PADDLE_WIDTH_INITIAL 100
 #define PADDLE_WIDTH_STEP 20
 #define PADDLE_HEIGHT 15
-#define BALL_SIZE 15
+#define BALL_SIZE 24
 #define BRICK_WIDTH 64
 #define BRICK_HEIGHT 32
 #define BRICK_ROWS 6
@@ -480,9 +480,11 @@ void render_gameplay(GameState* gs) {
 
     SDL_SetRenderDrawColor(gs->renderer, 255, 255, 255, 255);
     draw_rounded_rect(gs->renderer, &gs->paddle, 5);
+
+    SDL_FRect ball_src_rect = { 50, 34, 12, 12 };
     for (int i = 0; i < MAX_BALLS; i++) {
         if (gs->balls[i].active) {
-            draw_filled_circle(gs->renderer, gs->balls[i].rect.x + gs->balls[i].rect.w / 2, gs->balls[i].rect.y + gs->balls[i].rect.h / 2, gs->balls[i].rect.w / 2);
+            SDL_RenderTexture(gs->renderer, gs->spritesheet, &ball_src_rect, &gs->balls[i].rect);
         }
     }
 
@@ -497,12 +499,12 @@ void render_gameplay(GameState* gs) {
 
     for (int i = 0; i < gs->lives; i++) {
         SDL_FRect life_ball = {
-            SCREEN_WIDTH - 20,
+            SCREEN_WIDTH - RIGHT_MARGIN + 5,
             SCREEN_HEIGHT - 20 - (i * (BALL_SIZE + 5)),
             BALL_SIZE,
             BALL_SIZE
         };
-        draw_filled_circle(gs->renderer, life_ball.x + life_ball.w / 2, life_ball.y + life_ball.h / 2, life_ball.w / 2);
+        SDL_RenderTexture(gs->renderer, gs->spritesheet, &ball_src_rect, &life_ball);
     }
 
     // Draw powerups
