@@ -11,7 +11,7 @@
 #define SCREEN_HEIGHT 600
 #define PADDLE_WIDTH_INITIAL 100
 #define PADDLE_WIDTH_STEP 20
-#define PADDLE_HEIGHT 15
+#define PADDLE_HEIGHT 28
 #define BALL_SIZE 24
 #define BRICK_WIDTH 64
 #define BRICK_HEIGHT 32
@@ -478,8 +478,22 @@ void render_gameplay(GameState* gs) {
     SDL_FRect right_outline = {SCREEN_WIDTH - RIGHT_MARGIN - 3, 0, 3, SCREEN_HEIGHT};
     SDL_RenderFillRect(gs->renderer, &right_outline);
 
-    SDL_SetRenderDrawColor(gs->renderer, 255, 255, 255, 255);
-    draw_rounded_rect(gs->renderer, &gs->paddle, 5);
+    // Draw paddle
+    SDL_FRect left_paddle_src = { 118, 62, 6, 14 };
+    SDL_FRect right_paddle_src = { 138, 48, 6, 14 };
+    SDL_FRect middle_paddle_src = { 118, 50, 20, 10 };
+
+    float scale = 2.0f;
+    float left_w = left_paddle_src.w * scale;
+    float right_w = right_paddle_src.w * scale;
+
+    SDL_FRect left_paddle_dest = { gs->paddle.x, gs->paddle.y, left_w, PADDLE_HEIGHT };
+    SDL_FRect right_paddle_dest = { gs->paddle.x + gs->paddle.w - right_w, gs->paddle.y, right_w, PADDLE_HEIGHT };
+    SDL_FRect middle_paddle_dest = { gs->paddle.x + left_w, gs->paddle.y, gs->paddle.w - left_w - right_w, PADDLE_HEIGHT };
+
+    SDL_RenderTexture(gs->renderer, gs->spritesheet, &left_paddle_src, &left_paddle_dest);
+    SDL_RenderTexture(gs->renderer, gs->spritesheet, &middle_paddle_src, &middle_paddle_dest);
+    SDL_RenderTexture(gs->renderer, gs->spritesheet, &right_paddle_src, &right_paddle_dest);
 
     SDL_FRect ball_src_rect = { 50, 34, 12, 12 };
     for (int i = 0; i < MAX_BALLS; i++) {
