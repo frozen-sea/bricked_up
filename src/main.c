@@ -486,10 +486,11 @@ void render_gameplay(GameState* gs) {
     float scale = 2.0f;
     float left_w = left_paddle_src.w * scale;
     float right_w = right_paddle_src.w * scale;
+    float middle_h = middle_paddle_src.h * scale;
 
     SDL_FRect left_paddle_dest = { gs->paddle.x, gs->paddle.y, left_w, PADDLE_HEIGHT };
     SDL_FRect right_paddle_dest = { gs->paddle.x + gs->paddle.w - right_w, gs->paddle.y, right_w, PADDLE_HEIGHT };
-    SDL_FRect middle_paddle_dest = { gs->paddle.x + left_w, gs->paddle.y, gs->paddle.w - left_w - right_w, PADDLE_HEIGHT };
+    SDL_FRect middle_paddle_dest = { gs->paddle.x + left_w, gs->paddle.y + (PADDLE_HEIGHT - middle_h) / 2.0f, gs->paddle.w - left_w - right_w, middle_h };
 
     SDL_RenderTexture(gs->renderer, gs->spritesheet, &left_paddle_src, &left_paddle_dest);
     SDL_RenderTexture(gs->renderer, gs->spritesheet, &middle_paddle_src, &middle_paddle_dest);
