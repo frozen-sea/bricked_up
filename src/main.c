@@ -25,6 +25,15 @@
 #define MAX_BALLS 5
 #define PADDLE_SPEED 500.0f
 #define BRICK_ANIMATION_SPEED 50 // ms per frame
+#define MAX_PARTICLES 200
+
+typedef struct {
+    SDL_FPoint pos;
+    SDL_FPoint vel;
+    SDL_Color color;
+    float lifetime_ms;
+} Particle;
+
 
 typedef enum {
     SCREEN_TITLE,
@@ -79,8 +88,10 @@ typedef struct {
     int lives;
     int paddle_size_level;
     Uint64 last_powerup_spawn_time;
-    Uint64 sticky_paddle_end_time;
-    Uint64 sticky_paddle_remaining_time;
+    Uint64 sticky_paddle_timer_ms;
+    Particle particles[MAX_PARTICLES];
+    float force_field_y_offset;
+    float force_field_anim_timer;
     bool quit;
     bool paused;
     Uint64 last_frame_time;
@@ -197,9 +208,15 @@ void reset_game(GameState* gs) {
     gs->paddle.x = (SCREEN_WIDTH - gs->paddle.w) / 2;
     gs->paddle.y = SCREEN_HEIGHT - PADDLE_HEIGHT - 10;
     gs->paddle.h = PADDLE_HEIGHT;
-    gs->sticky_paddle_end_time = 0;
-    gs->sticky_paddle_remaining_time = 0;
+    gs->sticky_paddle_timer_ms = 0;
+    gs->force_field_y_offset = 0;
+    gs->force_field_anim_timer = 0;
+    for (int i = 0; i < MAX_PARTICLES; i++) {
+        gs->particles[i].lifetime_ms = 0;
+    }
     gs->paused = false;
+    gs->left_pressed = false;
+    gs->right_pressed = false;
 
     for (int i = 0; i < BRICK_ROWS; i++) {
         for (int j = 0; j < BRICK_COLS; j++) {
@@ -222,48 +239,36 @@ void handle_events_gameplay(GameState* gs) {
             gs->quit = true;
         }
         if (e.type == SDL_EVENT_KEY_DOWN) {
-            if (e.key.key == SDLK_P) {
-                gs->paused = !gs->paused;
-                if (gs->paused) {
-                    if (gs->sticky_paddle_end_time > SDL_GetTicks()) {
-                        gs->sticky_paddle_remaining_time = gs->sticky_paddle_end_time - SDL_GetTicks();
-                    }
-                } else {
-                    if (gs->sticky_paddle_remaining_time > 0) {
-                        gs->sticky_paddle_end_time = SDL_GetTicks() + gs->sticky_paddle_remaining_time;
-                        gs->sticky_paddle_remaining_time = 0;
-                    }
-                }
-            }
-            if (!gs->paused) {
-                switch (e.key.key) {
-                    case SDLK_LEFT:
-                        gs->left_pressed = true;
-                        break;
-                    case SDLK_RIGHT:
-                        gs->right_pressed = true;
-                        break;
-                    case SDLK_SPACE:
+            switch (e.key.key) {
+                case SDLK_P:
+                    gs->paused = !gs->paused;
+                    break;
+                case SDLK_LEFT:
+                    gs->left_pressed = true;
+                    break;
+                case SDLK_RIGHT:
+                    gs->right_pressed = true;
+                    break;
+                case SDLK_SPACE:
+                    if (!gs->paused) {
                         gs->ball_launched = true;
                         for (int i = 0; i < MAX_BALLS; i++) {
                             if (gs->balls[i].active && gs->balls[i].is_stuck) {
                                 launch_ball(&gs->balls[i], gs->paddle.x, gs->paddle.w);
                             }
                         }
-                        break;
-                }
+                    }
+                    break;
             }
         }
         if (e.type == SDL_EVENT_KEY_UP) {
-            if (!gs->paused) {
-                switch (e.key.key) {
-                    case SDLK_LEFT:
-                        gs->left_pressed = false;
-                        break;
-                    case SDLK_RIGHT:
-                        gs->right_pressed = false;
-                        break;
-                }
+            switch (e.key.key) {
+                case SDLK_LEFT:
+                    gs->left_pressed = false;
+                    break;
+                case SDLK_RIGHT:
+                    gs->right_pressed = false;
+                    break;
             }
         }
     }
@@ -298,14 +303,16 @@ void handle_events_gameover(GameState* gs) {
     }
 }
 
-void update_gameplay(GameState* gs, float delta_time) {
+void update_gameplay(GameState* gs, Uint64 delta_ms) {
     if (gs->paused) return;
 
+    float delta_seconds = delta_ms / 1000.0f;
+
     if (gs->left_pressed) {
-        gs->paddle.x -= PADDLE_SPEED * delta_time;
+        gs->paddle.x -= PADDLE_SPEED * delta_seconds;
     }
     if (gs->right_pressed) {
-        gs->paddle.x += PADDLE_SPEED * delta_time;
+        gs->paddle.x += PADDLE_SPEED * delta_seconds;
     }
 
     if (gs->paddle.x < 3) {
@@ -315,7 +322,7 @@ void update_gameplay(GameState* gs, float delta_time) {
         gs->paddle.x = SCREEN_WIDTH - gs->paddle.w - RIGHT_MARGIN - 3;
     }
 
-    bool is_sticky_paddle_active = SDL_GetTicks() < gs->sticky_paddle_end_time;
+    bool is_sticky_paddle_active = gs->sticky_paddle_timer_ms > 0;
 
     for (int k = 0; k < MAX_BALLS; k++) {
         if (!gs->balls[k].active) continue;
@@ -427,8 +434,7 @@ void update_gameplay(GameState* gs, float delta_time) {
                         gs->paddle_size_level--;
                     }
                 } else if (gs->powerups[i].type == POWERUP_STICKY_PADDLE) {
-                    gs->sticky_paddle_end_time = SDL_GetTicks() + 15000;
-                    gs->sticky_paddle_remaining_time = 0;
+                    gs->sticky_paddle_timer_ms = 15000;
                 } else if (gs->powerups[i].type == POWERUP_BALL_SPLIT) {
                     int first_active_ball = -1;
                     for (int l = 0; l < MAX_BALLS; l++) {
@@ -475,12 +481,56 @@ void update_gameplay(GameState* gs, float delta_time) {
         }
     }
     
-    if (gs->sticky_paddle_end_time != 0 && current_time > gs->sticky_paddle_end_time) {
-        gs->sticky_paddle_end_time = 0;
-        for (int i = 0; i < MAX_BALLS; i++) {
-            if (gs->balls[i].active && gs->balls[i].is_stuck) {
-                launch_ball(&gs->balls[i], gs->paddle.x, gs->paddle.w);
+    if (gs->sticky_paddle_timer_ms > 0) {
+        if (delta_ms >= gs->sticky_paddle_timer_ms) {
+            gs->sticky_paddle_timer_ms = 0;
+        } else {
+            gs->sticky_paddle_timer_ms -= delta_ms;
+        }
+
+        if (gs->sticky_paddle_timer_ms == 0) {
+            for (int i = 0; i < MAX_BALLS; i++) {
+                if (gs->balls[i].active && gs->balls[i].is_stuck) {
+                    launch_ball(&gs->balls[i], gs->paddle.x, gs->paddle.w);
+                }
             }
+        }
+    }
+
+    // Update force field animation
+    if (is_sticky_paddle_active) {
+        gs->force_field_anim_timer += delta_ms;
+        gs->force_field_y_offset = sinf(gs->force_field_anim_timer / 200.0f) * 3.0f;
+
+        // Spawn particles
+        for (int j = 0; j < MAX_PARTICLES; j++) {
+            if (gs->particles[j].lifetime_ms <= 0) {
+                gs->particles[j].lifetime_ms = 1000;
+                float left_x = gs->paddle.x - 13 + 12;
+                float right_x = gs->paddle.x + gs->paddle.w - 10 + 12;
+                gs->particles[j].pos.x = left_x + (rand() / (float)RAND_MAX) * (right_x - left_x);
+                gs->particles[j].pos.y = gs->paddle.y - 5 + gs->force_field_y_offset;
+                gs->particles[j].vel.x = 0;
+                gs->particles[j].vel.y = -0.025f - (rand() / (float)RAND_MAX) * 0.025f;
+                gs->particles[j].color.r = 100 + rand() % 50;
+                gs->particles[j].color.g = 150 + rand() % 50;
+                gs->particles[j].color.b = 255;
+                gs->particles[j].color.a = 255;
+                break;
+            }
+        }
+    }
+
+    // Update particles
+    for (int i = 0; i < MAX_PARTICLES; i++) {
+        if (gs->particles[i].lifetime_ms > 0) {
+            gs->particles[i].pos.x += gs->particles[i].vel.x * delta_ms;
+            gs->particles[i].pos.y += gs->particles[i].vel.y * delta_ms;
+            gs->particles[i].lifetime_ms -= delta_ms;
+            if (gs->particles[i].lifetime_ms < 0) {
+                gs->particles[i].lifetime_ms = 0;
+            }
+            gs->particles[i].color.a = (gs->particles[i].lifetime_ms / 1000.0f) * 255;
         }
     }
 }
@@ -546,16 +596,12 @@ void render_gameplay(GameState* gs) {
     }
 
     // Draw bounce area outline
-    SDL_SetRenderDrawColor(gs->renderer, 255, 255, 255, 255);
-    SDL_FRect top_outline = {0, 0, SCREEN_WIDTH - RIGHT_MARGIN, 3};
-    SDL_RenderFillRect(gs->renderer, &top_outline);
-    SDL_FRect left_outline = {0, 0, 3, SCREEN_HEIGHT};
-    SDL_RenderFillRect(gs->renderer, &left_outline);
+    SDL_SetRenderDrawColor(gs->renderer, 192, 192, 192, 255);
     SDL_FRect right_outline = {SCREEN_WIDTH - RIGHT_MARGIN - 3, 0, 3, SCREEN_HEIGHT};
     SDL_RenderFillRect(gs->renderer, &right_outline);
 
     // Draw paddle
-    bool is_sticky_paddle_active = SDL_GetTicks() < gs->sticky_paddle_end_time;
+    bool is_sticky_paddle_active = gs->sticky_paddle_timer_ms > 0;
 
     SDL_FRect left_paddle_src = { 112, 48, 6, 14 };
     SDL_FRect right_paddle_src = { 138, 48, 6, 14 };
@@ -576,11 +622,31 @@ void render_gameplay(GameState* gs) {
 
     if (is_sticky_paddle_active) {
         SDL_FRect sticky_src = { 132, 16, 12, 16 };
-        SDL_FRect sticky_dest_left = { gs->paddle.x - 1, gs->paddle.y - 4, 12 * scale, 16 * scale };
+        SDL_FRect sticky_dest_left = { gs->paddle.x - 13, gs->paddle.y - 5, 12 * scale, 16 * scale };
         SDL_RenderTexture(gs->renderer, gs->spritesheet, &sticky_src, &sticky_dest_left);
 
-        SDL_FRect sticky_dest_right = { gs->paddle.x + gs->paddle.w - (12 * scale) + 1, gs->paddle.y - 4, 12 * scale, 16 * scale };
+        SDL_FRect sticky_dest_right = { gs->paddle.x + gs->paddle.w - 10, gs->paddle.y - 5, 12 * scale, 16 * scale };
         SDL_RenderTextureRotated(gs->renderer, gs->spritesheet, &sticky_src, &sticky_dest_right, 0, NULL, SDL_FLIP_HORIZONTAL);
+
+        // Draw force field
+        float left_x = sticky_dest_left.x + sticky_dest_left.w / 2;
+        float right_x = sticky_dest_right.x + sticky_dest_right.w / 2;
+        float y = sticky_dest_left.y + 2 + gs->force_field_y_offset;
+        
+        Uint8 r = 100 + sinf(gs->force_field_anim_timer / 150.0f) * 50;
+        Uint8 g = 150 + sinf(gs->force_field_anim_timer / 180.0f) * 50;
+        SDL_SetRenderDrawColor(gs->renderer, r, g, 255, 150);
+        SDL_RenderLine(gs->renderer, left_x, y, right_x, y);
+        SDL_RenderLine(gs->renderer, left_x, y+1, right_x, y+1);
+    }
+
+    // Draw particles
+    for (int i = 0; i < MAX_PARTICLES; i++) {
+        if (gs->particles[i].lifetime_ms > 0) {
+            SDL_SetRenderDrawColor(gs->renderer, gs->particles[i].color.r, gs->particles[i].color.g, gs->particles[i].color.b, gs->particles[i].color.a);
+            SDL_FRect particle_rect = { gs->particles[i].pos.x, gs->particles[i].pos.y, scale, scale };
+            SDL_RenderFillRect(gs->renderer, &particle_rect);
+        }
     }
 
     SDL_FRect ball_src_rect = { 50, 34, 12, 12 };
@@ -766,7 +832,7 @@ int main(int argc, char* argv[]) {
 
     while (!gs.quit) {
         Uint64 current_time = SDL_GetTicks();
-        float delta_time = (current_time - gs.last_frame_time) / 1000.0f;
+        Uint64 delta_ms = current_time - gs.last_frame_time;
         gs.last_frame_time = current_time;
 
         switch (gs.current_screen) {
@@ -776,7 +842,7 @@ int main(int argc, char* argv[]) {
                 break;
             case SCREEN_GAMEPLAY:
                 handle_events_gameplay(&gs);
-                update_gameplay(&gs, delta_time);
+                update_gameplay(&gs, delta_ms);
                 render_gameplay(&gs);
                 break;
             case SCREEN_GAMEOVER:
