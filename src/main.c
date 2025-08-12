@@ -24,6 +24,8 @@
 #define PADDLE_COLLISION_COOLDOWN 200 // 0.2 seconds
 #define MAX_BALLS 5
 #define PADDLE_SPEED 500.0f
+#define BALL_SPEED 350.0f
+#define POWERUP_SPEED 100.0f
 #define BRICK_ANIMATION_SPEED 50 // ms per frame
 #define MAX_PARTICLES 200
 
@@ -70,7 +72,7 @@ typedef struct {
     SDL_FRect rect;
     bool active;
     int animation_frame; // 0 = solid, 1-10 = animation
-    Uint64 last_anim_time;
+    float animation_timer;
 } Brick;
 
 typedef struct {
@@ -96,6 +98,10 @@ typedef struct {
     bool paused;
     Uint64 last_frame_time;
     GameScreen current_screen;
+    bool debug_mode;
+    bool debug_render_collisions;
+    float game_speed;
+    Uint64 show_speed_timer;
 } GameState;
 
 void launch_ball(Ball* ball, float paddle_x, float paddle_w) {
@@ -107,9 +113,8 @@ void launch_ball(Ball* ball, float paddle_x, float paddle_w) {
     
     float angle = diff * (M_PI / 4.0f); // Max angle 45 degrees
     
-    float speed = 7.0f;
-    ball->vel_x = speed * sinf(angle);
-    ball->vel_y = -speed * cosf(angle);
+    ball->vel_x = BALL_SPEED * sinf(angle);
+    ball->vel_y = -BALL_SPEED * cosf(angle);
 }
 
 void draw_filled_circle(SDL_Renderer* renderer, float center_x, float center_y, float radius) {
@@ -217,11 +222,16 @@ void reset_game(GameState* gs) {
     gs->paused = false;
     gs->left_pressed = false;
     gs->right_pressed = false;
+    gs->debug_mode = false;
+    gs->debug_render_collisions = false;
+    gs->game_speed = 1.0f;
+    gs->show_speed_timer = 0;
 
     for (int i = 0; i < BRICK_ROWS; i++) {
         for (int j = 0; j < BRICK_COLS; j++) {
             gs->bricks[i][j].active = true;
             gs->bricks[i][j].animation_frame = 0;
+            gs->bricks[i][j].animation_timer = 0;
             gs->bricks[i][j].rect.w = BRICK_WIDTH;
             gs->bricks[i][j].rect.h = BRICK_HEIGHT;
             gs->bricks[i][j].rect.x = j * (BRICK_WIDTH + 5) + 42;
@@ -257,6 +267,33 @@ void handle_events_gameplay(GameState* gs) {
                                 launch_ball(&gs->balls[i], gs->paddle.x, gs->paddle.w);
                             }
                         }
+                    }
+                    break;
+                case SDLK_D:
+                    gs->debug_mode = !gs->debug_mode;
+                    break;
+                case SDLK_C:
+                    if (gs->debug_mode) {
+                        gs->debug_render_collisions = !gs->debug_render_collisions;
+                    }
+                    break;
+                case SDLK_S:
+                    if (gs->debug_mode) {
+                        gs->game_speed -= 0.1f;
+                        if (gs->game_speed < 0.1f) gs->game_speed = 0.1f;
+                        gs->show_speed_timer = 2000;
+                    }
+                    break;
+                case SDLK_F:
+                    if (gs->debug_mode) {
+                        gs->game_speed += 0.1f;
+                        gs->show_speed_timer = 2000;
+                    }
+                    break;
+                case SDLK_R:
+                    if (gs->debug_mode) {
+                        gs->game_speed = 1.0f;
+                        gs->show_speed_timer = 2000;
                     }
                     break;
             }
@@ -303,9 +340,78 @@ void handle_events_gameover(GameState* gs) {
     }
 }
 
-void update_gameplay(GameState* gs, Uint64 delta_ms) {
+
+float swept_aabb(SDL_FRect b1, SDL_FPoint vel, SDL_FRect b2, float* normal_x, float* normal_y) {
+    float inv_entry_x, inv_entry_y;
+    float inv_exit_x, inv_exit_y;
+
+    if (vel.x > 0.0f) {
+        inv_entry_x = b2.x - (b1.x + b1.w);
+        inv_exit_x = (b2.x + b2.w) - b1.x;
+    } else {
+        inv_entry_x = (b2.x + b2.w) - b1.x;
+        inv_exit_x = b2.x - (b1.x + b1.w);
+    }
+
+    if (vel.y > 0.0f) {
+        inv_entry_y = b2.y - (b1.y + b1.h);
+        inv_exit_y = (b2.y + b2.h) - b1.y;
+    } else {
+        inv_entry_y = (b2.y + b2.h) - b1.y;
+        inv_exit_y = b2.y - (b1.y + b1.h);
+    }
+
+    float entry_x, entry_y;
+    float exit_x, exit_y;
+
+    if (vel.x == 0.0f) {
+        entry_x = -INFINITY;
+        exit_x = INFINITY;
+    } else {
+        entry_x = inv_entry_x / vel.x;
+        exit_x = inv_exit_x / vel.x;
+    }
+
+    if (vel.y == 0.0f) {
+        entry_y = -INFINITY;
+        exit_y = INFINITY;
+    } else {
+        entry_y = inv_entry_y / vel.y;
+        exit_y = inv_exit_y / vel.y;
+    }
+
+    float entry_time = fmaxf(entry_x, entry_y);
+    float exit_time = fminf(exit_x, exit_y);
+
+    if (entry_time > exit_time || entry_x < 0.0f && entry_y < 0.0f || entry_x > 1.0f || entry_y > 1.0f) {
+        *normal_x = 0.0f;
+        *normal_y = 0.0f;
+        return 1.0f;
+    }
+
+    if (entry_x > entry_y) {
+        *normal_x = (vel.x > 0.0f) ? -1.0f : 1.0f;
+        *normal_y = 0.0f;
+    } else {
+        *normal_x = 0.0f;
+        *normal_y = (vel.y > 0.0f) ? -1.0f : 1.0f;
+    }
+
+    return entry_time;
+}
+
+void update_gameplay(GameState* gs, Uint64 unscaled_delta_ms) {
     if (gs->paused) return;
 
+    if (gs->show_speed_timer > 0) {
+        if (unscaled_delta_ms >= gs->show_speed_timer) {
+            gs->show_speed_timer = 0;
+        } else {
+            gs->show_speed_timer -= unscaled_delta_ms;
+        }
+    }
+
+    Uint64 delta_ms = unscaled_delta_ms * gs->game_speed;
     float delta_seconds = delta_ms / 1000.0f;
 
     if (gs->left_pressed) {
@@ -334,8 +440,63 @@ void update_gameplay(GameState* gs, Uint64 delta_ms) {
         }
 
         if (gs->ball_launched) {
-            gs->balls[k].rect.x += gs->balls[k].vel_x;
-            gs->balls[k].rect.y += gs->balls[k].vel_y;
+            float remaining_time = delta_seconds;
+            while (remaining_time > 0.0f) {
+                float min_collision_time = remaining_time;
+                float combined_normal_x = 0.0f, combined_normal_y = 0.0f;
+                int num_collisions = 0;
+
+                // Brick collision
+                for (int i = 0; i < BRICK_ROWS; i++) {
+                    for (int j = 0; j < BRICK_COLS; j++) {
+                        if (gs->bricks[i][j].active && gs->bricks[i][j].animation_frame == 0) {
+                            float nx, ny;
+                            SDL_FPoint vel = {gs->balls[k].vel_x, gs->balls[k].vel_y};
+                            float t = swept_aabb(gs->balls[k].rect, vel, gs->bricks[i][j].rect, &nx, &ny);
+                            if (t < min_collision_time) {
+                                min_collision_time = t;
+                                combined_normal_x = nx;
+                                combined_normal_y = ny;
+                                num_collisions = 1;
+                            } else if (t == min_collision_time) {
+                                combined_normal_x += nx;
+                                combined_normal_y += ny;
+                                num_collisions++;
+                            }
+                        }
+                    }
+                }
+                
+                gs->balls[k].rect.x += gs->balls[k].vel_x * min_collision_time;
+                gs->balls[k].rect.y += gs->balls[k].vel_y * min_collision_time;
+
+                if (num_collisions > 0) {
+                    for (int i = 0; i < BRICK_ROWS; i++) {
+                        for (int j = 0; j < BRICK_COLS; j++) {
+                            if (gs->bricks[i][j].active && gs->bricks[i][j].animation_frame == 0) {
+                                float nx, ny;
+                                SDL_FPoint vel = {gs->balls[k].vel_x, gs->balls[k].vel_y};
+                                float t = swept_aabb(gs->balls[k].rect, vel, gs->bricks[i][j].rect, &nx, &ny);
+                                if (t == min_collision_time) {
+                                    gs->bricks[i][j].animation_frame = 1;
+                                    gs->bricks[i][j].animation_timer = 0;
+                                    spawn_powerup(gs, gs->bricks[i][j].rect.x + (BRICK_WIDTH / 2) - (POWERUP_SIZE / 2), gs->bricks[i][j].rect.y + (BRICK_HEIGHT / 2) - (POWERUP_SIZE / 2));
+                                }
+                            }
+                        }
+                    }
+
+                    float magnitude = sqrtf(combined_normal_x * combined_normal_x + combined_normal_y * combined_normal_y);
+                    if (magnitude > 0.0f) {
+                        float normalized_x = combined_normal_x / magnitude;
+                        float normalized_y = combined_normal_y / magnitude;
+                        if (normalized_x != 0.0f) gs->balls[k].vel_x *= -1;
+                        if (normalized_y != 0.0f) gs->balls[k].vel_y *= -1;
+                    }
+                }
+                
+                remaining_time -= min_collision_time;
+            }
         }
 
         // Paddle collision
@@ -377,37 +538,21 @@ void update_gameplay(GameState* gs, Uint64 delta_ms) {
                 }
             }
         }
+    }
 
-        // Brick collision
-        bool all_bricks_destroyed = true;
-        for (int i = 0; i < BRICK_ROWS; i++) {
-            for (int j = 0; j < BRICK_COLS; j++) {
-                if (gs->bricks[i][j].active && gs->bricks[i][j].animation_frame == 0 && SDL_HasRectIntersectionFloat(&gs->balls[k].rect, &gs->bricks[i][j].rect)) {
-                    gs->bricks[i][j].animation_frame = 1;
-                    gs->bricks[i][j].last_anim_time = SDL_GetTicks();
-                    spawn_powerup(gs, gs->bricks[i][j].rect.x + (BRICK_WIDTH / 2) - (POWERUP_SIZE / 2), gs->bricks[i][j].rect.y + (BRICK_HEIGHT / 2) - (POWERUP_SIZE / 2));
-                    
-                    float ball_center_x = gs->balls[k].rect.x + BALL_SIZE / 2.0f;
-                    float ball_center_y = gs->balls[k].rect.y + BALL_SIZE / 2.0f;
-                    float brick_center_x = gs->bricks[i][j].rect.x + BRICK_WIDTH / 2.0f;
-                    float brick_center_y = gs->bricks[i][j].rect.y + BRICK_HEIGHT / 2.0f;
-                    float overlap_x = ( BALL_SIZE / 2.0f + BRICK_WIDTH / 2.0f) - fabsf(ball_center_x - brick_center_x);
-                    float overlap_y = ( BALL_SIZE / 2.0f + BRICK_HEIGHT / 2.0f) - fabsf(ball_center_y - brick_center_y);
-                    
-                    if (overlap_x < overlap_y) {
-                        gs->balls[k].vel_x = -gs->balls[k].vel_x;
-                    } else {
-                        gs->balls[k].vel_y = -gs->balls[k].vel_y;
-                    }
-                }
-                if (gs->bricks[i][j].active) {
-                    all_bricks_destroyed = false;
-                }
+    bool all_bricks_destroyed = true;
+    for (int i = 0; i < BRICK_ROWS; i++) {
+        for (int j = 0; j < BRICK_COLS; j++) {
+            if (gs->bricks[i][j].active) {
+                all_bricks_destroyed = false;
+                break;
             }
         }
-        if (all_bricks_destroyed) {
-            reset_game(gs);
-        }
+        if (!all_bricks_destroyed) break;
+    }
+
+    if (all_bricks_destroyed) {
+        reset_game(gs);
     }
 
     if (!gs->ball_launched) {
@@ -418,7 +563,7 @@ void update_gameplay(GameState* gs, Uint64 delta_ms) {
     // Update powerups
     for (int i = 0; i < MAX_POWERUPS; i++) {
         if (gs->powerups[i].active) {
-            gs->powerups[i].rect.y += 2;
+            gs->powerups[i].rect.y += POWERUP_SPEED * delta_seconds;
             if (SDL_HasRectIntersectionFloat(&gs->powerups[i].rect, &gs->paddle)) {
                 gs->powerups[i].active = false;
                 if (gs->powerups[i].type == POWERUP_ADD_LIFE) {
@@ -466,13 +611,13 @@ void update_gameplay(GameState* gs, Uint64 delta_ms) {
     }
 
     // Update brick animations
-    Uint64 current_time = SDL_GetTicks();
     for (int i = 0; i < BRICK_ROWS; i++) {
         for (int j = 0; j < BRICK_COLS; j++) {
             if (gs->bricks[i][j].active && gs->bricks[i][j].animation_frame > 0) {
-                if (current_time - gs->bricks[i][j].last_anim_time > BRICK_ANIMATION_SPEED) {
+                gs->bricks[i][j].animation_timer += delta_ms;
+                if (gs->bricks[i][j].animation_timer > BRICK_ANIMATION_SPEED) {
                     gs->bricks[i][j].animation_frame++;
-                    gs->bricks[i][j].last_anim_time = current_time;
+                    gs->bricks[i][j].animation_timer -= BRICK_ANIMATION_SPEED;
                     if (gs->bricks[i][j].animation_frame > 10) {
                         gs->bricks[i][j].active = false;
                     }
@@ -482,10 +627,10 @@ void update_gameplay(GameState* gs, Uint64 delta_ms) {
     }
     
     if (gs->sticky_paddle_timer_ms > 0) {
-        if (delta_ms >= gs->sticky_paddle_timer_ms) {
+        if (unscaled_delta_ms >= gs->sticky_paddle_timer_ms) {
             gs->sticky_paddle_timer_ms = 0;
         } else {
-            gs->sticky_paddle_timer_ms -= delta_ms;
+            gs->sticky_paddle_timer_ms -= unscaled_delta_ms;
         }
 
         if (gs->sticky_paddle_timer_ms == 0) {
@@ -536,6 +681,7 @@ void update_gameplay(GameState* gs, Uint64 delta_ms) {
 }
 
 void render_gameplay(GameState* gs) {
+    float scale = 2.0f;
     SDL_SetRenderDrawColor(gs->renderer, 0, 0, 0, 255);
     SDL_RenderClear(gs->renderer);
 
@@ -601,43 +747,47 @@ void render_gameplay(GameState* gs) {
     SDL_RenderFillRect(gs->renderer, &right_outline);
 
     // Draw paddle
-    bool is_sticky_paddle_active = gs->sticky_paddle_timer_ms > 0;
+    if (gs->debug_mode && gs->debug_render_collisions) {
+        SDL_SetRenderDrawColor(gs->renderer, 255, 0, 0, 255);
+        SDL_RenderFillRect(gs->renderer, &gs->paddle);
+    } else {
+        bool is_sticky_paddle_active = gs->sticky_paddle_timer_ms > 0;
 
-    SDL_FRect left_paddle_src = { 112, 48, 6, 14 };
-    SDL_FRect right_paddle_src = { 138, 48, 6, 14 };
-    SDL_FRect middle_paddle_src = { 118, 50, 20, 10 };
+        SDL_FRect left_paddle_src = { 112, 48, 6, 14 };
+        SDL_FRect right_paddle_src = { 138, 48, 6, 14 };
+        SDL_FRect middle_paddle_src = { 118, 50, 20, 10 };
 
-    float scale = 2.0f;
-    float left_w = left_paddle_src.w * scale;
-    float right_w = right_paddle_src.w * scale;
-    float middle_h = middle_paddle_src.h * scale;
+        float left_w = left_paddle_src.w * scale;
+        float right_w = right_paddle_src.w * scale;
+        float middle_h = middle_paddle_src.h * scale;
 
-    SDL_FRect left_paddle_dest = { gs->paddle.x, gs->paddle.y - 4, left_w, 28 };
-    SDL_FRect right_paddle_dest = { gs->paddle.x + gs->paddle.w - right_w, gs->paddle.y - 4, right_w, 28 };
-    SDL_FRect middle_paddle_dest = { gs->paddle.x + left_w, gs->paddle.y + (PADDLE_HEIGHT - middle_h) / 2.0f, gs->paddle.w - left_w - right_w, middle_h };
+        SDL_FRect left_paddle_dest = { gs->paddle.x, gs->paddle.y - 4, left_w, 28 };
+        SDL_FRect right_paddle_dest = { gs->paddle.x + gs->paddle.w - right_w, gs->paddle.y - 4, right_w, 28 };
+        SDL_FRect middle_paddle_dest = { gs->paddle.x + left_w, gs->paddle.y + (PADDLE_HEIGHT - middle_h) / 2.0f, gs->paddle.w - left_w - right_w, middle_h };
 
-    SDL_RenderTexture(gs->renderer, gs->spritesheet, &left_paddle_src, &left_paddle_dest);
-    SDL_RenderTexture(gs->renderer, gs->spritesheet, &right_paddle_src, &right_paddle_dest);
-    SDL_RenderTexture(gs->renderer, gs->spritesheet, &middle_paddle_src, &middle_paddle_dest);
+        SDL_RenderTexture(gs->renderer, gs->spritesheet, &left_paddle_src, &left_paddle_dest);
+        SDL_RenderTexture(gs->renderer, gs->spritesheet, &right_paddle_src, &right_paddle_dest);
+        SDL_RenderTexture(gs->renderer, gs->spritesheet, &middle_paddle_src, &middle_paddle_dest);
 
-    if (is_sticky_paddle_active) {
-        SDL_FRect sticky_src = { 132, 16, 12, 16 };
-        SDL_FRect sticky_dest_left = { gs->paddle.x - 13, gs->paddle.y - 5, 12 * scale, 16 * scale };
-        SDL_RenderTexture(gs->renderer, gs->spritesheet, &sticky_src, &sticky_dest_left);
+        if (is_sticky_paddle_active) {
+            SDL_FRect sticky_src = { 132, 16, 12, 16 };
+            SDL_FRect sticky_dest_left = { gs->paddle.x - 13, gs->paddle.y - 5, 12 * scale, 16 * scale };
+            SDL_RenderTexture(gs->renderer, gs->spritesheet, &sticky_src, &sticky_dest_left);
 
-        SDL_FRect sticky_dest_right = { gs->paddle.x + gs->paddle.w - 10, gs->paddle.y - 5, 12 * scale, 16 * scale };
-        SDL_RenderTextureRotated(gs->renderer, gs->spritesheet, &sticky_src, &sticky_dest_right, 0, NULL, SDL_FLIP_HORIZONTAL);
+            SDL_FRect sticky_dest_right = { gs->paddle.x + gs->paddle.w - 10, gs->paddle.y - 5, 12 * scale, 16 * scale };
+            SDL_RenderTextureRotated(gs->renderer, gs->spritesheet, &sticky_src, &sticky_dest_right, 0, NULL, SDL_FLIP_HORIZONTAL);
 
-        // Draw force field
-        float left_x = sticky_dest_left.x + sticky_dest_left.w / 2;
-        float right_x = sticky_dest_right.x + sticky_dest_right.w / 2;
-        float y = sticky_dest_left.y + 2 + gs->force_field_y_offset;
-        
-        Uint8 r = 100 + sinf(gs->force_field_anim_timer / 150.0f) * 50;
-        Uint8 g = 150 + sinf(gs->force_field_anim_timer / 180.0f) * 50;
-        SDL_SetRenderDrawColor(gs->renderer, r, g, 255, 150);
-        SDL_RenderLine(gs->renderer, left_x, y, right_x, y);
-        SDL_RenderLine(gs->renderer, left_x, y+1, right_x, y+1);
+            // Draw force field
+            float left_x = sticky_dest_left.x + sticky_dest_left.w / 2;
+            float right_x = sticky_dest_right.x + sticky_dest_right.w / 2;
+            float y = sticky_dest_left.y + 2 + gs->force_field_y_offset;
+            
+            Uint8 r = 100 + sinf(gs->force_field_anim_timer / 150.0f) * 50;
+            Uint8 g = 150 + sinf(gs->force_field_anim_timer / 180.0f) * 50;
+            SDL_SetRenderDrawColor(gs->renderer, r, g, 255, 150);
+            SDL_RenderLine(gs->renderer, left_x, y, right_x, y);
+            SDL_RenderLine(gs->renderer, left_x, y+1, right_x, y+1);
+        }
     }
 
     // Draw particles
@@ -652,18 +802,28 @@ void render_gameplay(GameState* gs) {
     SDL_FRect ball_src_rect = { 50, 34, 12, 12 };
     for (int i = 0; i < MAX_BALLS; i++) {
         if (gs->balls[i].active) {
-            SDL_RenderTexture(gs->renderer, gs->spritesheet, &ball_src_rect, &gs->balls[i].rect);
+            if (gs->debug_mode && gs->debug_render_collisions) {
+                SDL_SetRenderDrawColor(gs->renderer, 0, 255, 0, 255);
+                SDL_RenderFillRect(gs->renderer, &gs->balls[i].rect);
+            } else {
+                SDL_RenderTexture(gs->renderer, gs->spritesheet, &ball_src_rect, &gs->balls[i].rect);
+            }
         }
     }
 
     for (int i = 0; i < BRICK_ROWS; i++) {
         for (int j = 0; j < BRICK_COLS; j++) {
             if (gs->bricks[i][j].active) {
-                int frame = gs->bricks[i][j].animation_frame;
-                int src_x = 32 + (frame * 32);
-                int src_y = 176 + i * 16;
-                SDL_FRect src_rect = { src_x, src_y, 32, 16 };
-                SDL_RenderTexture(gs->renderer, gs->spritesheet, &src_rect, &gs->bricks[i][j].rect);
+                if (gs->debug_mode && gs->debug_render_collisions) {
+                    SDL_SetRenderDrawColor(gs->renderer, 0, 0, 255, 255);
+                    SDL_RenderFillRect(gs->renderer, &gs->bricks[i][j].rect);
+                } else {
+                    int frame = gs->bricks[i][j].animation_frame;
+                    int src_x = 32 + (frame * 32);
+                    int src_y = 176 + i * 16;
+                    SDL_FRect src_rect = { src_x, src_y, 32, 16 };
+                    SDL_RenderTexture(gs->renderer, gs->spritesheet, &src_rect, &gs->bricks[i][j].rect);
+                }
             }
         }
     }
@@ -728,6 +888,38 @@ void render_gameplay(GameState* gs) {
         SDL_FRect text_rect = {
             (SCREEN_WIDTH - text_surface->w) / 2.0f,
             (SCREEN_HEIGHT - text_surface->h) / 2.0f,
+            text_surface->w,
+            text_surface->h
+        };
+        SDL_RenderTexture(gs->renderer, text_texture, NULL, &text_rect);
+        SDL_DestroyTexture(text_texture);
+        SDL_DestroySurface(text_surface);
+    }
+
+    if (gs->show_speed_timer > 0) {
+        SDL_Color text_color = {255, 255, 255, 255};
+        char speed_text[20];
+        snprintf(speed_text, 20, "SPEED %.0f%%", gs->game_speed * 100);
+        SDL_Surface* text_surface = TTF_RenderText_Blended(gs->font, speed_text, 0, text_color);
+        SDL_Texture* text_texture = SDL_CreateTextureFromSurface(gs->renderer, text_surface);
+        SDL_FRect text_rect = {
+            (SCREEN_WIDTH - text_surface->w) / 2.0f,
+            (SCREEN_HEIGHT - text_surface->h) / 2.0f + 30,
+            text_surface->w,
+            text_surface->h
+        };
+        SDL_RenderTexture(gs->renderer, text_texture, NULL, &text_rect);
+        SDL_DestroyTexture(text_texture);
+        SDL_DestroySurface(text_surface);
+    }
+
+    if (gs->debug_mode) {
+        SDL_Color text_color = {255, 255, 255, 255};
+        SDL_Surface* text_surface = TTF_RenderText_Blended(gs->font, "DEBUG", 0, text_color);
+        SDL_Texture* text_texture = SDL_CreateTextureFromSurface(gs->renderer, text_surface);
+        SDL_FRect text_rect = {
+            5,
+            SCREEN_HEIGHT - text_surface->h - 5,
             text_surface->w,
             text_surface->h
         };
