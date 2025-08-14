@@ -9,21 +9,23 @@
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 600
-#define PADDLE_WIDTH_INITIAL 100
-#define PADDLE_WIDTH_STEP 20
+#define PADDLE_WIDTH_INITIAL 80
+#define PADDLE_WIDTH_STEP 10
 #define PADDLE_HEIGHT 20
 #define BALL_SIZE 24
 #define BRICK_WIDTH 64
 #define BRICK_HEIGHT 32
 #define BRICK_ROWS 6
 #define BRICK_COLS 10
-#define RIGHT_MARGIN 30
+#define TOP_MARGIN 70
+#define BORDER_THICKNESS 3
 #define POWERUP_SIZE 15
 #define MAX_POWERUPS 10
 #define POWERUP_SPAWN_COOLDOWN 250 // 0.25 seconds
 #define PADDLE_COLLISION_COOLDOWN 200 // 0.2 seconds
 #define MAX_BALLS 5
 #define PADDLE_SPEED 500.0f
+#define PADDLE_ACCELERATION 10.0f
 #define BALL_SPEED 350.0f
 #define POWERUP_SPEED 100.0f
 #define BRICK_ANIMATION_SPEED 50 // ms per frame
@@ -102,6 +104,7 @@ typedef struct {
     bool debug_render_collisions;
     float game_speed;
     Uint64 show_speed_timer;
+    float paddle_vel_x;
 } GameState;
 
 void launch_ball(Ball* ball, float paddle_x, float paddle_w) {
@@ -226,7 +229,10 @@ void reset_game(GameState* gs) {
     gs->debug_render_collisions = false;
     gs->game_speed = 1.0f;
     gs->show_speed_timer = 0;
+    gs->paddle_vel_x = 0.0f;
 
+    float total_bricks_width = BRICK_COLS * (BRICK_WIDTH + 11) - 11;
+    float side_margin = (SCREEN_WIDTH - total_bricks_width) / 2.0f;
     for (int i = 0; i < BRICK_ROWS; i++) {
         for (int j = 0; j < BRICK_COLS; j++) {
             gs->bricks[i][j].active = true;
@@ -234,8 +240,8 @@ void reset_game(GameState* gs) {
             gs->bricks[i][j].animation_timer = 0;
             gs->bricks[i][j].rect.w = BRICK_WIDTH;
             gs->bricks[i][j].rect.h = BRICK_HEIGHT;
-            gs->bricks[i][j].rect.x = j * (BRICK_WIDTH + 5) + 42;
-            gs->bricks[i][j].rect.y = i * (BRICK_HEIGHT + 5) + 35;
+            gs->bricks[i][j].rect.x = side_margin + j * (BRICK_WIDTH + 11);
+            gs->bricks[i][j].rect.y = i * (BRICK_HEIGHT + 11) + 35 + TOP_MARGIN;
         }
     }
 
@@ -261,10 +267,14 @@ void handle_events_gameplay(GameState* gs) {
                     break;
                 case SDLK_SPACE:
                     if (!gs->paused) {
-                        gs->ball_launched = true;
-                        for (int i = 0; i < MAX_BALLS; i++) {
-                            if (gs->balls[i].active && gs->balls[i].is_stuck) {
-                                launch_ball(&gs->balls[i], gs->paddle.x, gs->paddle.w);
+                        if (!gs->ball_launched) {
+                            gs->ball_launched = true;
+                            launch_ball(&gs->balls[0], gs->paddle.x, gs->paddle.w);
+                        } else {
+                            for (int i = 0; i < MAX_BALLS; i++) {
+                                if (gs->balls[i].active && gs->balls[i].is_stuck) {
+                                    launch_ball(&gs->balls[i], gs->paddle.x, gs->paddle.w);
+                                }
                             }
                         }
                     }
@@ -365,6 +375,11 @@ float swept_aabb(SDL_FRect b1, SDL_FPoint vel, SDL_FRect b2, float* normal_x, fl
     float exit_x, exit_y;
 
     if (vel.x == 0.0f) {
+        if (b1.x + b1.w < b2.x || b1.x > b2.x + b2.w) {
+            *normal_x = 0.0f;
+            *normal_y = 0.0f;
+            return 1.0f;
+        }
         entry_x = -INFINITY;
         exit_x = INFINITY;
     } else {
@@ -373,6 +388,11 @@ float swept_aabb(SDL_FRect b1, SDL_FPoint vel, SDL_FRect b2, float* normal_x, fl
     }
 
     if (vel.y == 0.0f) {
+        if (b1.y + b1.h < b2.y || b1.y > b2.y + b2.h) {
+            *normal_x = 0.0f;
+            *normal_y = 0.0f;
+            return 1.0f;
+        }
         entry_y = -INFINITY;
         exit_y = INFINITY;
     } else {
@@ -414,25 +434,32 @@ void update_gameplay(GameState* gs, Uint64 unscaled_delta_ms) {
     Uint64 delta_ms = unscaled_delta_ms * gs->game_speed;
     float delta_seconds = delta_ms / 1000.0f;
 
-    if (gs->left_pressed) {
-        gs->paddle.x -= PADDLE_SPEED * delta_seconds;
-    }
-    if (gs->right_pressed) {
-        gs->paddle.x += PADDLE_SPEED * delta_seconds;
+    float target_vel_x = 0.0f;
+    if (gs->left_pressed && !gs->right_pressed) {
+        target_vel_x = -PADDLE_SPEED;
+    } else if (gs->right_pressed && !gs->left_pressed) {
+        target_vel_x = PADDLE_SPEED;
     }
 
-    if (gs->paddle.x < 3) {
-        gs->paddle.x = 3;
+    if (target_vel_x != 0) {
+        gs->paddle_vel_x += (target_vel_x - gs->paddle_vel_x) * PADDLE_ACCELERATION * delta_seconds;
+    } else {
+        gs->paddle_vel_x = 0;
     }
-    if (gs->paddle.x > SCREEN_WIDTH - gs->paddle.w - RIGHT_MARGIN - 3) {
-        gs->paddle.x = SCREEN_WIDTH - gs->paddle.w - RIGHT_MARGIN - 3;
+
+    gs->paddle.x += gs->paddle_vel_x * delta_seconds;
+
+    if (gs->paddle.x < BORDER_THICKNESS) {
+        gs->paddle.x = BORDER_THICKNESS;
+    }
+    if (gs->paddle.x > SCREEN_WIDTH - gs->paddle.w - BORDER_THICKNESS) {
+        gs->paddle.x = SCREEN_WIDTH - gs->paddle.w - BORDER_THICKNESS;
     }
 
     bool is_sticky_paddle_active = gs->sticky_paddle_timer_ms > 0;
 
     for (int k = 0; k < MAX_BALLS; k++) {
         if (!gs->balls[k].active) continue;
-
         if (gs->balls[k].is_stuck) {
             gs->balls[k].rect.x = gs->paddle.x + gs->balls[k].stuck_offset_x;
             gs->balls[k].rect.y = gs->paddle.y - BALL_SIZE;
@@ -441,57 +468,114 @@ void update_gameplay(GameState* gs, Uint64 unscaled_delta_ms) {
 
         if (gs->ball_launched) {
             float remaining_time = delta_seconds;
-            while (remaining_time > 0.0f) {
+            
+            while (remaining_time > 0.00001f) {
                 float min_collision_time = remaining_time;
                 float combined_normal_x = 0.0f, combined_normal_y = 0.0f;
                 int num_collisions = 0;
+
+                Brick* colliding_bricks[BRICK_ROWS * BRICK_COLS] = {NULL};
+                int num_colliding_bricks = 0;
+                bool paddle_collided = false;
+
+                SDL_FPoint vel = {gs->balls[k].vel_x, gs->balls[k].vel_y};
 
                 // Brick collision
                 for (int i = 0; i < BRICK_ROWS; i++) {
                     for (int j = 0; j < BRICK_COLS; j++) {
                         if (gs->bricks[i][j].active && gs->bricks[i][j].animation_frame == 0) {
                             float nx, ny;
-                            SDL_FPoint vel = {gs->balls[k].vel_x, gs->balls[k].vel_y};
                             float t = swept_aabb(gs->balls[k].rect, vel, gs->bricks[i][j].rect, &nx, &ny);
                             if (t < min_collision_time) {
                                 min_collision_time = t;
                                 combined_normal_x = nx;
                                 combined_normal_y = ny;
                                 num_collisions = 1;
+                                paddle_collided = false;
+                                num_colliding_bricks = 1;
+                                colliding_bricks[0] = &gs->bricks[i][j];
                             } else if (t == min_collision_time) {
                                 combined_normal_x += nx;
                                 combined_normal_y += ny;
                                 num_collisions++;
+                                colliding_bricks[num_colliding_bricks++] = &gs->bricks[i][j];
                             }
                         }
                     }
                 }
-                
+
+                // Paddle collision
+                if (SDL_GetTicks() - gs->balls[k].last_collision_time > PADDLE_COLLISION_COOLDOWN) {
+                    float nx, ny;
+                    float t = swept_aabb(gs->balls[k].rect, vel, gs->paddle, &nx, &ny);
+                    if (t < min_collision_time) {
+                        min_collision_time = t;
+                        num_collisions = 1;
+                        paddle_collided = true;
+                        num_colliding_bricks = 0;
+                    } else if (t == min_collision_time) {
+                        paddle_collided = true;
+                        num_collisions++;
+                    }
+                }
+
+                // Wall collisions
+                SDL_FRect walls[] = {
+                    {0, TOP_MARGIN - 10, SCREEN_WIDTH, 10}, // Top
+                    {BORDER_THICKNESS - 10, 0, 10, SCREEN_HEIGHT}, // Left
+                    {SCREEN_WIDTH - BORDER_THICKNESS, 0, 10, SCREEN_HEIGHT} // Right
+                };
+                for (int i = 0; i < 3; i++) {
+                    float nx, ny;
+                    float t = swept_aabb(gs->balls[k].rect, vel, walls[i], &nx, &ny);
+                    if (t < min_collision_time) {
+                        min_collision_time = t;
+                        combined_normal_x = nx;
+                        combined_normal_y = ny;
+                        num_collisions = 1;
+                        paddle_collided = false;
+                        num_colliding_bricks = 0;
+                    } else if (t == min_collision_time) {
+                        combined_normal_x += nx;
+                        combined_normal_y += ny;
+                        num_collisions++;
+                    }
+                }
+
                 gs->balls[k].rect.x += gs->balls[k].vel_x * min_collision_time;
                 gs->balls[k].rect.y += gs->balls[k].vel_y * min_collision_time;
-
+                
                 if (num_collisions > 0) {
-                    for (int i = 0; i < BRICK_ROWS; i++) {
-                        for (int j = 0; j < BRICK_COLS; j++) {
-                            if (gs->bricks[i][j].active && gs->bricks[i][j].animation_frame == 0) {
-                                float nx, ny;
-                                SDL_FPoint vel = {gs->balls[k].vel_x, gs->balls[k].vel_y};
-                                float t = swept_aabb(gs->balls[k].rect, vel, gs->bricks[i][j].rect, &nx, &ny);
-                                if (t == min_collision_time) {
-                                    gs->bricks[i][j].animation_frame = 1;
-                                    gs->bricks[i][j].animation_timer = 0;
-                                    spawn_powerup(gs, gs->bricks[i][j].rect.x + (BRICK_WIDTH / 2) - (POWERUP_SIZE / 2), gs->bricks[i][j].rect.y + (BRICK_HEIGHT / 2) - (POWERUP_SIZE / 2));
-                                }
+                    if (paddle_collided) {
+                        gs->balls[k].last_collision_time = SDL_GetTicks();
+                        if (is_sticky_paddle_active) {
+                            gs->balls[k].is_stuck = true;
+                            gs->balls[k].stuck_offset_x = gs->balls[k].rect.x - gs->paddle.x;
+                            gs->balls[k].vel_x = 0;
+                            gs->balls[k].vel_y = 0;
+                            break; 
+                        } else {
+                            launch_ball(&gs->balls[k], gs->paddle.x, gs->paddle.w);
+                        }
+                    } else {
+                        for (int i = 0; i < num_colliding_bricks; i++) {
+                            Brick* brick = colliding_bricks[i];
+                            if (brick && brick->animation_frame == 0) {
+                                brick->animation_frame = 1;
+                                brick->animation_timer = 0;
+                                spawn_powerup(gs, brick->rect.x + (BRICK_WIDTH / 2) - (POWERUP_SIZE / 2), brick->rect.y + (BRICK_HEIGHT / 2) - (POWERUP_SIZE / 2));
                             }
                         }
-                    }
 
-                    float magnitude = sqrtf(combined_normal_x * combined_normal_x + combined_normal_y * combined_normal_y);
-                    if (magnitude > 0.0f) {
-                        float normalized_x = combined_normal_x / magnitude;
-                        float normalized_y = combined_normal_y / magnitude;
-                        if (normalized_x != 0.0f) gs->balls[k].vel_x *= -1;
-                        if (normalized_y != 0.0f) gs->balls[k].vel_y *= -1;
+                        float magnitude = sqrtf(combined_normal_x * combined_normal_x + combined_normal_y * combined_normal_y);
+                        if (magnitude > 0.0f) {
+                            float normalized_x = combined_normal_x / magnitude;
+                            float normalized_y = combined_normal_y / magnitude;
+                            
+                            float dot_product = gs->balls[k].vel_x * normalized_x + gs->balls[k].vel_y * normalized_y;
+                            gs->balls[k].vel_x -= 2 * dot_product * normalized_x;
+                            gs->balls[k].vel_y -= 2 * dot_product * normalized_y;
+                        }
                     }
                 }
                 
@@ -499,30 +583,6 @@ void update_gameplay(GameState* gs, Uint64 unscaled_delta_ms) {
             }
         }
 
-        // Paddle collision
-        if (SDL_GetTicks() - gs->balls[k].last_collision_time > PADDLE_COLLISION_COOLDOWN && SDL_HasRectIntersectionFloat(&gs->balls[k].rect, &gs->paddle)) {
-            gs->balls[k].last_collision_time = SDL_GetTicks();
-            
-            if (is_sticky_paddle_active) {
-                gs->balls[k].is_stuck = true;
-                gs->balls[k].stuck_offset_x = gs->balls[k].rect.x - gs->paddle.x;
-                gs->balls[k].vel_x = 0;
-                gs->balls[k].vel_y = 0;
-            } else {
-                launch_ball(&gs->balls[k], gs->paddle.x, gs->paddle.w);
-            }
-        }
-
-        // Wall collision
-        if (gs->balls[k].rect.x < 0 || gs->balls[k].rect.x > SCREEN_WIDTH - BALL_SIZE - RIGHT_MARGIN) {
-            gs->balls[k].vel_x = -gs->balls[k].vel_x;
-        }
-        if (gs->balls[k].rect.y < 0) {
-            gs->balls[k].rect.y = 0;
-            if (gs->balls[k].vel_y < 0) {
-                gs->balls[k].vel_y = -gs->balls[k].vel_y;
-            }
-        }
         if (gs->balls[k].rect.y > SCREEN_HEIGHT) {
             gs->balls[k].active = false;
             int active_balls = 0;
@@ -703,7 +763,7 @@ void render_gameplay(GameState* gs) {
 
         float total_width = s1->w + s2->w + s3->w + s4->w + s5->w;
         float current_x = (SCREEN_WIDTH - total_width) / 2.0f;
-        float y = (SCREEN_HEIGHT - s1->h) / 2.0f;
+        float y = TOP_MARGIN + (SCREEN_HEIGHT - TOP_MARGIN - s1->h) / 2.0f + 80.0f;
 
         SDL_Texture* t1 = SDL_CreateTextureFromSurface(gs->renderer, s1);
         SDL_FRect r1 = { current_x, y, s1->w, s1->h };
@@ -741,10 +801,14 @@ void render_gameplay(GameState* gs) {
         SDL_DestroySurface(s5);
     }
 
-    // Draw bounce area outline
+    // Draw borders
     SDL_SetRenderDrawColor(gs->renderer, 192, 192, 192, 255);
-    SDL_FRect right_outline = {SCREEN_WIDTH - RIGHT_MARGIN - 3, 0, 3, SCREEN_HEIGHT};
-    SDL_RenderFillRect(gs->renderer, &right_outline);
+    SDL_FRect top_border = {0, TOP_MARGIN - BORDER_THICKNESS, SCREEN_WIDTH, BORDER_THICKNESS};
+    SDL_RenderFillRect(gs->renderer, &top_border);
+    SDL_FRect left_border = {0, 0, BORDER_THICKNESS, SCREEN_HEIGHT};
+    SDL_RenderFillRect(gs->renderer, &left_border);
+    SDL_FRect right_border = {SCREEN_WIDTH - BORDER_THICKNESS, 0, BORDER_THICKNESS, SCREEN_HEIGHT};
+    SDL_RenderFillRect(gs->renderer, &right_border);
 
     // Draw paddle
     if (gs->debug_mode && gs->debug_render_collisions) {
@@ -828,10 +892,13 @@ void render_gameplay(GameState* gs) {
         }
     }
 
+    int balls_per_col = (TOP_MARGIN - 2 * BORDER_THICKNESS) / (BALL_SIZE + 3);
     for (int i = 0; i < gs->lives; i++) {
+        int col = i / balls_per_col;
+        int row = i % balls_per_col;
         SDL_FRect life_ball = {
-            SCREEN_WIDTH - RIGHT_MARGIN + 3,
-            SCREEN_HEIGHT - 27 - (i * (BALL_SIZE + 3)),
+            SCREEN_WIDTH - BORDER_THICKNESS - 5 - (col + 1) * (BALL_SIZE + 3) + 3,
+            BORDER_THICKNESS + 5 + row * (BALL_SIZE + 3),
             BALL_SIZE,
             BALL_SIZE
         };
